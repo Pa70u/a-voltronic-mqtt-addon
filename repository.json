@@ -1,0 +1,8 @@
+{
+  "name": "Pa70u Voltronic MQTT Add-ons",
+  "url": "https://github.com/Pa70u/a-voltronic-mqtt-addon",
+  "maintainer": "Pa70u",
+  "addons": [
+    "voltronic_mqtt"
+  ]
+}
