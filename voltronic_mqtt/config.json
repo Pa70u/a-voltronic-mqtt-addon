@@ -1,0 +1,27 @@
+{
+  "name": "Voltronic MQTT",
+  "version": "1.0.0",
+  "slug": "voltronic_mqtt",
+  "description": "Publie les données de l'onduleur Voltronic sur MQTT",
+  "startup": "services",
+  "boot": "auto",
+  "hassio_api": false,
+  "host_network": true,
+  "privileged": ["SYS_ADMIN"],
+  "devices": ["/dev/serial/by-id/:/dev/serial/by-id/:rwm"],
+  "options": {
+    "serial_port": "/dev/serial/by-id/usb-FTDI_FT231X_USB_UART_ABC123-if00-port0",
+    "mqtt_host": "127.0.0.1",
+    "mqtt_port": 1883,
+    "mqtt_user": "mqtt_user",
+    "mqtt_password": "Rzuug3df1!!"
+  },
+  "schema": {
+    "serial_port": "str",
+    "mqtt_host": "str",
+    "mqtt_port": "int",
+    "mqtt_user": "str",
+    "mqtt_password": "str"
+  },
+  "image": "ghcr.io/ned-kelly/docker-voltronic-homeassistant:latest"
+}
