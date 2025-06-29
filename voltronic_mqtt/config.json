@@ -15,7 +15,7 @@
     "mqtt_host": "127.0.0.1",
     "mqtt_port": 1883,
     "mqtt_user": "mqtt_user",
-    "mqtt_password": "Rzuug3df1!!"
+    "mqtt_password": "CHANGE_ME"
   },
   "schema": {
     "serial_port": "str",
