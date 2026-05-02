@@ -11,12 +11,13 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 SCHEMA_PATH = BACKEND_DIR / "schema.sql"
 
-# Le chemin DOIT être posé avant tout import de `main` par les tests
-# (les imports en haut des fichiers test_*.py s'exécutent à la collection,
-# donc avant les fixtures à scope=session).
+# Pose le chemin de la base AVANT tout import des modules de l'app
+# (les imports en haut des fichiers test_*.py sont évalués à la collection,
+# c-à-d avant les fixtures à scope=session).
 _TMPDIR = tempfile.mkdtemp(prefix="garageos_tests_")
 _DB_PATH = Path(_TMPDIR) / "garage.db"
 os.environ["GARAGE_DB"] = str(_DB_PATH)
+os.environ.setdefault("CORS_ORIGINS", "http://testserver")
 
 _conn = sqlite3.connect(_DB_PATH)
 _conn.executescript(SCHEMA_PATH.read_text())
@@ -27,3 +28,14 @@ _conn.close()
 @pytest.fixture(scope="session")
 def db_path():
     return _DB_PATH
+
+
+@pytest.fixture(scope="function")
+def db():
+    conn = sqlite3.connect(_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        yield conn
+    finally:
+        conn.close()
