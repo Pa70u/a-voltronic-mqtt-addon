@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 
 from ..deps import current_admin, get_db
 from ..schemas.common import OK
@@ -17,6 +18,8 @@ from ..schemas.devis import (
     DevisUpdate,
     EnvoyerDevis,
 )
+from ..services import notifications
+from ..services.pdf import build_devis_pdf
 
 router = APIRouter(prefix="/api/devis", tags=["devis"])
 
@@ -144,6 +147,30 @@ def convertir_devis(
     return {"ok": True, "numero": numero}
 
 
+def _devis_email_html(dev: dict) -> str:
+    nom = f"{dev.get('prenom','') or ''} {dev.get('nom','') or ''}".strip()
+    montant = f"{(dev.get('total_ttc') or 0):.2f}".replace(".", ",")
+    return f"""<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+<div style="background:#1e3a8a;padding:24px;border-radius:12px 12px 0 0">
+<div style="font-size:18px;font-weight:900;color:#fff">GARAGE DE LA MONTAGNE</div>
+<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:3px">94510 La Queue-en-Brie</div>
+</div>
+<div style="padding:24px;background:#fff;border:1px solid #e5e7eb">
+<p>Bonjour <strong>{nom}</strong>,</p>
+<p>Veuillez trouver ci-joint votre devis <strong>{dev.get('numero','')}</strong>
+d'un montant de <strong>{montant} €&nbsp;TTC</strong>.</p>
+<div style="background:#f3f4f6;border-radius:8px;padding:16px;margin:16px 0;font-size:13px">
+<div style="display:flex;justify-content:space-between;margin-bottom:6px">
+<span style="color:#6b7280">Validité</span><strong>{dev.get('validite',30)} jours</strong></div>
+<div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;
+margin-top:8px;padding-top:8px;border-top:2px solid #1e3a8a">
+<span>Total TTC</span><span style="color:#2563eb">{montant} €</span></div>
+</div>
+<p>N'hésitez pas à nous contacter pour toute question.</p>
+<p style="font-size:12px;color:#6b7280">Garage de la Montagne · SIRET 487 723 306 00014</p>
+</div></div>"""
+
+
 @router.post("/{did}/envoyer")
 def envoyer_devis(
     did: int,
@@ -151,9 +178,59 @@ def envoyer_devis(
     _: int = Depends(current_admin),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Stub — l'envoi réel arrive au jalon 4 (service notifications + PDF)."""
-    return {
-        "ok": True,
-        "results": {"info": "Envoi en cours d'implémentation (jalon 4)"},
-        "payment_url": "",
-    }
+    row = db.execute(
+        "SELECT d.*, u.nom, u.prenom, u.email, u.telephone "
+        "FROM devis d JOIN users u ON d.client_id=u.id WHERE d.id=?",
+        (did,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Devis introuvable")
+    dev = dict(row)
+
+    results: dict = {}
+
+    if payload.email:
+        dest = payload.email_dest or dev.get("email") or ""
+        try:
+            pdf_bytes, pdf_name = build_devis_pdf(db, did)
+            notifications.send_email(
+                to=dest,
+                subject=f"Devis {dev['numero']} — Garage de la Montagne",
+                html=_devis_email_html(dev),
+                attachments=[(pdf_name, pdf_bytes, "pdf")],
+            )
+            db.execute("UPDATE devis SET statut='envoye' WHERE id=? AND statut='brouillon'",
+                       (did,))
+            db.commit()
+            results["email"] = {"ok": True}
+        except Exception as e:
+            results["email"] = {"ok": False, "error": str(e)}
+
+    if payload.sms:
+        tel = payload.telephone or dev.get("telephone") or ""
+        montant = f"{(dev.get('total_ttc') or 0):.2f}".replace(".", ",")
+        msg = f"Garage Montagne: Devis {dev['numero']} - {montant}EUR. Voir email."
+        try:
+            notifications.send_sms(tel, msg)
+            results["sms"] = {"ok": True}
+        except Exception as e:
+            results["sms"] = {"ok": False, "error": str(e)}
+
+    return {"ok": True, "results": results, "payment_url": ""}
+
+
+@router.get("/{did}/pdf")
+def telecharger_pdf(
+    did: int,
+    _: int = Depends(current_admin),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        pdf_bytes, filename = build_devis_pdf(db, did)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )

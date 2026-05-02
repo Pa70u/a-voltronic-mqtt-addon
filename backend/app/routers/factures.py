@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 
 from ..deps import current_admin, get_db
 from ..schemas.common import OK
@@ -18,6 +19,7 @@ from ..schemas.facture import (
     FactureStatutUpdate,
 )
 from ..services import notifications
+from ..services.pdf import build_facture_pdf
 
 router = APIRouter(prefix="/api/factures", tags=["factures"])
 
@@ -165,14 +167,16 @@ def envoyer_facture(
         except Exception as e:
             results["stripe"] = {"ok": False, "error": str(e)}
 
-    # Email
+    # Email (avec PDF en pièce jointe)
     if payload.email:
         dest = payload.email_dest or fac.get("email") or ""
         try:
+            pdf_bytes, pdf_name = build_facture_pdf(db, fid)
             notifications.send_email(
                 to=dest,
                 subject=f"Facture {fac['numero']} — Garage de la Montagne",
                 html=_email_html(fac, payment_url),
+                attachments=[(pdf_name, pdf_bytes, "pdf")],
             )
             results["email"] = {"ok": True}
         except Exception as e:
@@ -192,3 +196,20 @@ def envoyer_facture(
             results["sms"] = {"ok": False, "error": str(e)}
 
     return {"ok": True, "results": results, "payment_url": payment_url}
+
+
+@router.get("/{fid}/pdf")
+def telecharger_pdf(
+    fid: int,
+    _: int = Depends(current_admin),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        pdf_bytes, filename = build_facture_pdf(db, fid)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )

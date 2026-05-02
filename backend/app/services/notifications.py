@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import smtplib
 import ssl
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any
+from typing import Any, Sequence
 
 import requests as http
 
@@ -45,18 +46,39 @@ def create_payment_link(amount_cents: int, label: str, metadata: dict) -> str:
 
 
 # ── Email ──────────────────────────────────────────────────────────────────
-def send_email(to: str, subject: str, html: str) -> None:
+def send_email(
+    to: str,
+    subject: str,
+    html: str,
+    attachments: Sequence[tuple[str, bytes, str]] | None = None,
+) -> None:
+    """Envoie un email HTML.
+
+    `attachments` = liste de (filename, data_bytes, mime_subtype) — ex:
+    `[("facture_FAC_2026_05_001.pdf", pdf_bytes, "pdf")]`.
+    """
     settings = get_settings()
     if not (settings.gmail_user and settings.gmail_password):
         raise RuntimeError("GMAIL_USER / GMAIL_PASSWORD non configurés")
     if not to:
         raise RuntimeError("Destinataire vide")
 
-    msg = MIMEMultipart("alternative")
+    if attachments:
+        msg = MIMEMultipart("mixed")
+        body = MIMEMultipart("alternative")
+        body.attach(MIMEText(html, "html", "utf-8"))
+        msg.attach(body)
+        for filename, data, subtype in attachments:
+            part = MIMEApplication(data, _subtype=subtype)
+            part.add_header("Content-Disposition", "attachment", filename=filename)
+            msg.attach(part)
+    else:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(html, "html", "utf-8"))
+
     msg["Subject"] = subject
     msg["From"] = f"Garage de la Montagne <{settings.gmail_user}>"
     msg["To"] = to
-    msg.attach(MIMEText(html, "html", "utf-8"))
 
     ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as srv:
