@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     )
     token_lifetime_days: int = 7
 
+    # ⚠️ DEV ONLY — bypass complet de l'authentification.
+    # Quand true, toutes les requêtes sont vues comme provenant du 1er admin.
+    # NE JAMAIS activer en production avec de vrais clients connectés.
+    disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")
+
     # Email (Gmail)
     gmail_user: str = Field(default="", alias="GMAIL_USER")
     gmail_password: str = Field(default="", alias="GMAIL_PASSWORD")

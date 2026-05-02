@@ -1,6 +1,7 @@
 """Point d'entrée FastAPI — monte les routers et applique le schéma au démarrage."""
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -24,10 +25,18 @@ from .routers import (
 )
 from .security import cleanup_expired_tokens
 
+log = logging.getLogger("uvicorn.error")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    settings = get_settings()
+    if settings.disable_auth:
+        log.warning("=" * 70)
+        log.warning("⚠️  DISABLE_AUTH=true — TOUTE L'API EST OUVERTE PUBLIQUEMENT")
+        log.warning("⚠️  Mode dev/beta uniquement. NE JAMAIS LAISSER EN PRODUCTION.")
+        log.warning("=" * 70)
     # Nettoyage des tokens expirés au démarrage
     conn = connect()
     try:
@@ -64,7 +73,12 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "app": settings.app_name}
+        s = get_settings()
+        return {
+            "status": "ok",
+            "app": s.app_name,
+            "auth_disabled": s.disable_auth,
+        }
 
     return app
 

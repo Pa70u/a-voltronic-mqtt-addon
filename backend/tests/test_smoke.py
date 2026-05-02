@@ -13,7 +13,10 @@ def test_health_endpoint():
     client = TestClient(main.app)
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok", "app": "GarageOS"}
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["app"] == "GarageOS"
+    assert "auth_disabled" in body
 
 
 def test_login_requires_credentials():
